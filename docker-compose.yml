@@ -1,0 +1,75 @@
+version: '3.8'
+
+services:
+  chromadb:
+    image: chromadb/chroma:0.4.24
+    volumes:
+      - ./chroma_data:/chroma/chroma
+    environment:
+      - IS_PERSISTENT=TRUE
+      - PERSIST_DIRECTORY=/chroma/chroma
+      - ANONYMIZED_TELEMETRY=FALSE
+    ports:
+      - "8000:8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import requests; requests.get('http://localhost:8000/api/v1/heartbeat')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
+
+  backend:
+    build: .
+    ports:
+      - "5001:5001"
+    environment:
+      - FLASK_APP=api.py
+      - FLASK_ENV=development
+      - CHROMADB_HOST=chromadb
+      - CHROMADB_PORT=8000
+      - OPEN_WEBUI_API_KEY=${OPEN_WEBUI_API_KEY}
+    volumes:
+      - ./api.py:/app/api.py
+      - ./app.py:/app/app.py
+      - ./scraper.py:/app/scraper.py
+      - ./config.py:/app/config.py
+      - ./utils.py:/app/utils.py
+      - ./vector_db.py:/app/vector_db.py
+      - ./logs:/app/logs
+      - ./processed_files:/app/processed_files
+    depends_on:
+      - chromadb
+    restart: unless-stopped
+
+  openwebui:
+    image: ghcr.io/open-webui/open-webui:main
+    ports:
+      - "8080:8080"
+    environment:
+      - WEBUI_NAME=RAG Scraper WebUI
+      - RAG_EMBEDDING_MODEL=sentence-transformers/all-MiniLM-L6-v2
+      - RAG_EMBEDDING_MODEL_AUTO_UPDATE=true
+      - WEBUI_AUTH=false
+    volumes:
+      - ./open-webui:/app/backend/data
+    depends_on:
+      - chromadb
+    restart: unless-stopped
+
+  caddy:
+    image: slothcroissant/caddy-cloudflaredns:latest
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      - CLOUDFLARE_API_TOKEN=${CLOUDFLARE_API_TOKEN}
+      - ACME_AGREE=true
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile
+      - caddy_data:/data
+      - caddy_config:/config
+    restart: unless-stopped
+
+volumes:
+  caddy_data:
+  caddy_config:

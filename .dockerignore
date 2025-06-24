@@ -1,0 +1,22 @@
+# Docker-related files
+Dockerfile
+docker-compose.yml
+
+# Git directory
+.git
+
+# Python virtual environment
+.venv
+
+# Data volumes from other services
+caddy_config/
+caddy_data/
+chroma_data/
+openwebui_data/
+
+# Python cache files
+__pycache__/
+*.pyc
+
+# Environment file
+.env

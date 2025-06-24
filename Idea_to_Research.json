@@ -1,0 +1,220 @@
+{
+  "name": "Idea to Research",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "/get_idea_data",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ],
+      "id": "3657f61f-2ab9-4e70-8e07-0eef974032c4",
+      "name": "Webhook",
+      "webhookId": "6d21b978-9334-43ae-ad86-c7d22af6ec7d"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.perplexity.ai/chat/completions",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpBearerAuth",
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={ \n\"model\": \"sonar-deep-research\", \n\"messages\": [{\"role\": \"user\", \"content\": \"I am producing a blog post about '{{ $json.body.idea }}'. Help me get up to speed an everything I need to know about this topic.\"}]\n}",
+        "options": {
+          "timeout": 960000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        220,
+        0
+      ],
+      "id": "261788ec-9873-4364-af99-4517040cc57b",
+      "name": "HTTP Request",
+      "credentials": {
+        "httpBearerAuth": {
+          "id": "dYAx8d2wovaUqBcS",
+          "name": "Perplexity API key"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const output = {\n\t\"think\": \"\", \"research\": \"\"\n}\nconst inputString = $(\"HTTP Request\").first().json.choices[0].message.content;\n\n// Use a regular expression to extract the content\nconst regex = /<think>(.*?)<\\/think>(.*)/s;\nconst match = inputString.match(regex);\n\nif (match) {\n\tconst think = match[1].trim();\n\tconst research = match[2].trim();\n\noutput.think=think \noutput.research=research\n}\n\nreturn output"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        440,
+        0
+      ],
+      "id": "e0d6570c-e38a-4687-8384-764b620230b4",
+      "name": "Code"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://YourObsidianTailnet:8080/hooks/createobsidianfile",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "filename",
+              "value": "=/Users/name/Library/Mobile Documents/iCloud~md~obsidian/Documents/Obsidian Vault/0 - Ideas/Research for {{ $('Webhook').first().json.body.idea }}"
+            },
+            {
+              "name": "research",
+              "value": "={{ $json.research }}"
+            },
+            {
+              "name": "citations",
+              "value": "={{ $('HTTP Request').first().json.citations.map((item, index) => `[${index + 1}]: ${item}`).join('\\n') }}"
+            },
+            {
+              "name": "think",
+              "value": "={{ $json.think }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        600,
+        0
+      ],
+      "id": "a049cb97-1b59-4937-abfc-7ea3ceeb10b1",
+      "name": "Send to Obsidian"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://YourAutoLlamaTailnetIP:5001/api/scrape",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "urls",
+              "value": "={{ $('Parse and Extract URLs').first().json.urls }}"
+            },
+            {
+              "name": "pdfs",
+              "value": "={{ $('Code').first().json.citations }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        600,
+        160
+      ],
+      "id": "8d3acd4b-e2c1-47b4-a864-7a67df868756",
+      "name": "Send to RAG"
+    },
+    {
+      "parameters": {
+        "jsCode": "const returnItems = [];\nconst output = {\n\t\"think\": \"\", // This field will be empty by default if not sourced separately\n\t\"urls\": []\n};\n\n// *** CORRECTED SOURCE ***\n// Directly access the 'citations' array from the 'HTTP Request' node's output.\nconst allUrlsFromHttpRequest = $('HTTP Request').first().json.citations;\n\nif (allUrlsFromHttpRequest && Array.isArray(allUrlsFromHttpRequest)) {\n    // Filter out URLs that end with '.pdf' or contain '.pdf?' (these go to the other node)\n    output.urls = allUrlsFromHttpRequest.filter(url => {\n        const lowerCaseUrl = url.toLowerCase();\n        return !(lowerCaseUrl.endsWith('.pdf') || lowerCaseUrl.includes('.pdf?'));\n    });\n} else {\n    // Log a warning if the expected data isn't found\n    console.warn(\"Parse and Extract URLs Node: 'citations' array not found or not an array from HTTP Request node.\");\n}\n\n// NOTE on 'think' field:\n// If your rag_scraper webhook still requires a 'think' field, you'll need to source it\n// from the main content of the Perplexity response (e.g., $('HTTP Request').first().json.choices[0].message.content).\n// This node's input is now just the citations array, so it can't derive 'think' from its input directly.\n// For now, it will remain an empty string.\n\nreturnItems.push({\n    json: output\n});\n\nreturn returnItems;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        440,
+        160
+      ],
+      "id": "7ba4f89b-9a74-4725-8311-fdbabfe5c847",
+      "name": "Parse and Extract URLs"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request": {
+      "main": [
+        [
+          {
+            "node": "Code",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Parse and Extract URLs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code": {
+      "main": [
+        [
+          {
+            "node": "Send to Obsidian",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse and Extract URLs": {
+      "main": [
+        [
+          {
+            "node": "Send to RAG",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "045742b5-7277-494e-9a76-5573aaa50b9f",
+  "meta": {
+    "instanceId": "4865ae5af2849c31dbbf16da00743e073124cd0544fa76175cd589753f0f9599"
+  },
+  "id": "u2ViVTRuKrIk6bC2",
+  "tags": []
+}

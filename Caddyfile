@@ -1,0 +1,15 @@
+o.llamagic.com {
+    tls {
+        dns cloudflare {env.CLOUDFLARE_API_TOKEN}
+    }
+    reverse_proxy openwebui:8080
+}
+
+r.llamagic.com {
+    tls {
+        dns cloudflare {env.CLOUDFLARE_API_TOKEN}
+    }
+
+    # Route all traffic to the backend service
+    reverse_proxy backend:5001
+}
